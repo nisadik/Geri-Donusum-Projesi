@@ -4,6 +4,7 @@ import {
   integer,
   pgTable,
   text,
+  timestamp,
   varchar,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -34,6 +35,25 @@ export const savedLocations = pgTable("saved_locations", {
   longitude: doublePrecision("longitude").notNull(),
 });
 
+export const recyclingHistory = pgTable("recycling_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  recyclingPointId: varchar("recycling_point_id").notNull(),
+  pointName: text("point_name").notNull(),
+  pointType: text("point_type").notNull(),
+  pointsEarned: integer("points_earned").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const rewards = pgTable("rewards", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  cost: integer("cost").notNull(),
+  icon: text("icon").notNull(),
+  category: text("category").notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -51,6 +71,10 @@ export const recycleActionSchema = z.object({
   recyclingPointId: z.string().min(1),
 });
 
+export const redeemRewardSchema = z.object({
+  rewardId: z.string().min(1),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
@@ -60,4 +84,8 @@ export type RecyclingPoint = typeof recyclingPoints.$inferSelect;
 export type InsertSavedLocation = z.infer<typeof insertSavedLocationSchema>;
 export type SavedLocation = typeof savedLocations.$inferSelect;
 
+export type RecyclingHistory = typeof recyclingHistory.$inferSelect;
+export type Reward = typeof rewards.$inferSelect;
+
 export type RecycleAction = z.infer<typeof recycleActionSchema>;
+export type RedeemReward = z.infer<typeof redeemRewardSchema>;

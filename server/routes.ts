@@ -5,6 +5,7 @@ import { fromZodError } from "zod-validation-error";
 import {
   insertSavedLocationSchema,
   recycleActionSchema,
+  redeemRewardSchema,
 } from "@shared/schema";
 import { DEMO_USER_ID, storage } from "./storage";
 
@@ -74,12 +75,52 @@ export async function registerRoutes(
         point.pointsValue,
       );
       if (!updated) return res.status(404).json({ error: "User not found" });
+      await storage.createRecyclingHistory({
+        userId: DEMO_USER_ID,
+        recyclingPointId: point.id,
+        pointName: point.name,
+        pointType: point.type,
+        pointsEarned: point.pointsValue,
+      });
       const { password: _password, ...safeUser } = updated;
       res.json({
         user: safeUser,
         earnedPoints: point.pointsValue,
         recyclingPoint: point,
       });
+    } catch (err) {
+      handleZodError(err, res);
+    }
+  });
+
+  app.get("/api/history", async (_req: Request, res: Response) => {
+    const history = await storage.listRecyclingHistory(DEMO_USER_ID);
+    res.json(history);
+  });
+
+  app.get("/api/rewards", async (_req: Request, res: Response) => {
+    const rewards = await storage.listRewards();
+    res.json(rewards);
+  });
+
+  app.post("/api/rewards/redeem", async (req: Request, res: Response) => {
+    try {
+      const { rewardId } = redeemRewardSchema.parse(req.body);
+      const reward = await storage.getReward(rewardId);
+      if (!reward) {
+        return res.status(404).json({ error: "Reward not found" });
+      }
+      const user = await storage.getUser(DEMO_USER_ID);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      if (user.points < reward.cost) {
+        return res
+          .status(400)
+          .json({ error: "Yetersiz puan. Daha fazla geri dönüştür." });
+      }
+      const updated = await storage.addUserPoints(DEMO_USER_ID, -reward.cost);
+      if (!updated) return res.status(404).json({ error: "User not found" });
+      const { password: _password, ...safeUser } = updated;
+      res.json({ user: safeUser, reward });
     } catch (err) {
       handleZodError(err, res);
     }

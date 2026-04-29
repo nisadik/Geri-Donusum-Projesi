@@ -3,7 +3,9 @@ import {
   type InsertRecyclingPoint,
   type InsertSavedLocation,
   type InsertUser,
+  type RecyclingHistory,
   type RecyclingPoint,
+  type Reward,
   type SavedLocation,
   type User,
 } from "@shared/schema";
@@ -21,12 +23,22 @@ export interface IStorage {
   listSavedLocations(userId: string): Promise<SavedLocation[]>;
   createSavedLocation(location: InsertSavedLocation): Promise<SavedLocation>;
   deleteSavedLocation(id: string, userId: string): Promise<boolean>;
+
+  listRecyclingHistory(userId: string): Promise<RecyclingHistory[]>;
+  createRecyclingHistory(
+    entry: Omit<RecyclingHistory, "id" | "createdAt">,
+  ): Promise<RecyclingHistory>;
+
+  listRewards(): Promise<Reward[]>;
+  getReward(id: string): Promise<Reward | undefined>;
 }
 
 export class MemStorage implements IStorage {
   private users = new Map<string, User>();
   private points = new Map<string, RecyclingPoint>();
   private locations = new Map<string, SavedLocation>();
+  private history = new Map<string, RecyclingHistory>();
+  private rewards = new Map<string, Reward>();
 
   async getUser(id: string): Promise<User | undefined> {
     return this.users.get(id);
@@ -98,6 +110,36 @@ export class MemStorage implements IStorage {
     return this.locations.delete(id);
   }
 
+  async listRecyclingHistory(userId: string): Promise<RecyclingHistory[]> {
+    return Array.from(this.history.values())
+      .filter((entry) => entry.userId === userId)
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+  }
+
+  async createRecyclingHistory(
+    entry: Omit<RecyclingHistory, "id" | "createdAt">,
+  ): Promise<RecyclingHistory> {
+    const id = randomUUID();
+    const created: RecyclingHistory = {
+      ...entry,
+      id,
+      createdAt: new Date(),
+    };
+    this.history.set(id, created);
+    return created;
+  }
+
+  async listRewards(): Promise<Reward[]> {
+    return Array.from(this.rewards.values()).sort((a, b) => a.cost - b.cost);
+  }
+
+  async getReward(id: string): Promise<Reward | undefined> {
+    return this.rewards.get(id);
+  }
+
   insertUserDirect(user: User) {
     this.users.set(user.id, user);
   }
@@ -109,6 +151,10 @@ export class MemStorage implements IStorage {
   insertSavedLocationDirect(location: SavedLocation) {
     this.locations.set(location.id, location);
   }
+
+  insertRewardDirect(reward: Reward) {
+    this.rewards.set(reward.id, reward);
+  }
 }
 
 const memStorage = new MemStorage();
@@ -119,7 +165,7 @@ const ISTANBUL_CENTER = { lat: 41.0082, lng: 28.9784 };
 
 memStorage.insertUserDirect({
   id: DEMO_USER_ID,
-  username: "demo",
+  username: "Yeşil Kahraman",
   password: "demo",
   points: 300,
 });
@@ -201,4 +247,60 @@ memStorage.insertSavedLocationDirect({
   longitude: ISTANBUL_CENTER.lng + 0.01,
 });
 
+const seededRewards: Reward[] = [
+  {
+    id: "rw-coffee",
+    name: "Kahve İndirimi",
+    description: "Anlaşmalı kafelerde 1 kahve için %25 indirim kuponu.",
+    cost: 100,
+    icon: "☕",
+    category: "İndirim",
+  },
+  {
+    id: "rw-cinema",
+    name: "Sinema Bileti",
+    description: "Hafta içi sinema biletinde 50 TL indirim kuponu.",
+    cost: 250,
+    icon: "🎬",
+    category: "İndirim",
+  },
+  {
+    id: "rw-tree",
+    name: "1 Ağaç Dik",
+    description: "Senin adına bir fidan dikilir ve sertifika gönderilir.",
+    cost: 400,
+    icon: "🌳",
+    category: "Bağış",
+  },
+  {
+    id: "rw-tshirt",
+    name: "Geri Dönüştürülmüş Tişört",
+    description: "Geri dönüştürülmüş malzemeden üretilmiş Atık Yeri tişörtü.",
+    cost: 800,
+    icon: "👕",
+    category: "Ürün",
+  },
+  {
+    id: "rw-bottle",
+    name: "Çelik Termos",
+    description: "Tek kullanımlık şişeye veda. 500ml çelik termos.",
+    cost: 600,
+    icon: "🧴",
+    category: "Ürün",
+  },
+  {
+    id: "rw-bus",
+    name: "Toplu Taşıma Kredisi",
+    description: "İstanbulkart için 30 TL kredi kuponu.",
+    cost: 300,
+    icon: "🚌",
+    category: "İndirim",
+  },
+];
+
+for (const reward of seededRewards) {
+  memStorage.insertRewardDirect(reward);
+}
+
 export const storage: IStorage = memStorage;
+export { memStorage };
