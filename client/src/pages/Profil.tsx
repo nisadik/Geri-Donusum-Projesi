@@ -1,5 +1,12 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { BottomNav } from "@/components/BottomNav";
 import type { RecyclingHistory, User } from "@shared/schema";
 
@@ -65,6 +72,10 @@ function formatRelativeTime(date: Date | string): string {
 }
 
 export const Profil = (): JSX.Element => {
+  const [proofPreview, setProofPreview] = useState<RecyclingHistory | null>(
+    null,
+  );
+
   const userQuery = useQuery<Omit<User, "password">>({
     queryKey: ["/api/me"],
   });
@@ -82,8 +93,7 @@ export const Profil = (): JSX.Element => {
   const initial = username.charAt(0).toUpperCase();
 
   return (
-    <main className="w-full bg-white">
-      <div className="mx-auto flex w-full max-w-[390px] flex-col bg-white">
+    <main className="app-shell flex flex-col">
         <header className="relative">
           <div className="absolute inset-x-0 top-0 z-20 flex h-[54px] items-center justify-between px-6">
             <div className="[font-family:'SF_Pro-Semibold',Helvetica] text-[17px] font-normal leading-[22px] tracking-[0] text-black">
@@ -226,8 +236,26 @@ export const Profil = (): JSX.Element => {
                   data-testid={`card-history-${entry.id}`}
                   className="rounded-[16px] border-0 bg-[#f1f1f1] shadow-none"
                 >
-                  <CardContent className="flex items-center justify-between p-3">
-                    <div className="flex min-w-0 flex-col">
+                  <CardContent className="flex items-center gap-3 p-3">
+                    {entry.proofImage ? (
+                      <button
+                        type="button"
+                        data-testid={`button-proof-${entry.id}`}
+                        onClick={() => setProofPreview(entry)}
+                        className="shrink-0"
+                      >
+                        <img
+                          src={entry.proofImage}
+                          alt="Geri dönüşüm kanıtı"
+                          className="h-12 w-12 rounded-[12px] object-cover"
+                        />
+                      </button>
+                    ) : (
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[12px] bg-white text-xl">
+                        ♻️
+                      </div>
+                    )}
+                    <div className="flex min-w-0 flex-1 flex-col">
                       <h3 className="[font-family:'Nunito',Helvetica] text-[12px] font-semibold leading-[16px] text-black">
                         {entry.pointName}
                       </h3>
@@ -241,7 +269,7 @@ export const Profil = (): JSX.Element => {
                         </span>
                       </div>
                     </div>
-                    <span className="[font-family:'Nunito',Helvetica] text-[13px] font-bold text-[#17594a]">
+                    <span className="shrink-0 [font-family:'Nunito',Helvetica] text-[13px] font-bold text-[#17594a]">
                       +{entry.pointsEarned}
                     </span>
                   </CardContent>
@@ -254,7 +282,37 @@ export const Profil = (): JSX.Element => {
         <footer>
           <BottomNav />
         </footer>
-      </div>
+
+      <Dialog
+        open={!!proofPreview}
+        onOpenChange={(open) => {
+          if (!open) setProofPreview(null);
+        }}
+      >
+        <DialogContent className="max-w-[340px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle data-testid="text-proof-dialog-title">
+              {proofPreview?.pointName}
+            </DialogTitle>
+          </DialogHeader>
+          {proofPreview?.proofImage && (
+            <img
+              src={proofPreview.proofImage}
+              alt="Geri dönüşüm kanıtı"
+              data-testid="img-proof-full"
+              className="aspect-square w-full rounded-2xl object-cover"
+            />
+          )}
+          <div className="flex items-center justify-between rounded-xl bg-[#f1f1f1] px-3 py-2">
+            <span className="[font-family:'Nunito',Helvetica] text-[12px] text-[#4d4d4d]">
+              {proofPreview ? formatRelativeTime(proofPreview.createdAt) : ""}
+            </span>
+            <span className="[font-family:'Nunito',Helvetica] text-[13px] font-bold text-[#17594a]">
+              +{proofPreview?.pointsEarned} puan
+            </span>
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 };

@@ -7,7 +7,7 @@ import {
   recycleActionSchema,
   redeemRewardSchema,
 } from "@shared/schema";
-import { DEMO_USER_ID, storage } from "./storage";
+import { DEMO_USER_ID, generateRedemptionCode, storage } from "./storage";
 
 function handleZodError(err: unknown, res: Response) {
   if (err instanceof z.ZodError) {
@@ -65,7 +65,9 @@ export async function registerRoutes(
 
   app.post("/api/recycle", async (req: Request, res: Response) => {
     try {
-      const { recyclingPointId } = recycleActionSchema.parse(req.body);
+      const { recyclingPointId, proofImage } = recycleActionSchema.parse(
+        req.body,
+      );
       const point = await storage.getRecyclingPoint(recyclingPointId);
       if (!point) {
         return res.status(404).json({ error: "Recycling point not found" });
@@ -81,6 +83,7 @@ export async function registerRoutes(
         pointName: point.name,
         pointType: point.type,
         pointsEarned: point.pointsValue,
+        proofImage,
       });
       const { password: _password, ...safeUser } = updated;
       res.json({
@@ -103,6 +106,36 @@ export async function registerRoutes(
     res.json(rewards);
   });
 
+  app.get("/api/redemptions", async (_req: Request, res: Response) => {
+    const redemptions = await storage.listRedemptions(DEMO_USER_ID);
+    res.json(redemptions);
+  });
+
+  app.get("/api/redemptions/:code", async (req: Request, res: Response) => {
+    const redemption = await storage.getRedemptionByCode(req.params.code);
+    if (!redemption) {
+      return res.status(404).json({ error: "Kod bulunamadı." });
+    }
+    res.json(redemption);
+  });
+
+  app.post(
+    "/api/redemptions/:code/use",
+    async (req: Request, res: Response) => {
+      const existing = await storage.getRedemptionByCode(req.params.code);
+      if (!existing) {
+        return res.status(404).json({ error: "Kod bulunamadı." });
+      }
+      if (existing.usedAt) {
+        return res
+          .status(400)
+          .json({ error: "Bu kod zaten kullanıldı.", redemption: existing });
+      }
+      const updated = await storage.markRedemptionUsed(req.params.code);
+      res.json(updated);
+    },
+  );
+
   app.post("/api/rewards/redeem", async (req: Request, res: Response) => {
     try {
       const { rewardId } = redeemRewardSchema.parse(req.body);
@@ -119,8 +152,18 @@ export async function registerRoutes(
       }
       const updated = await storage.addUserPoints(DEMO_USER_ID, -reward.cost);
       if (!updated) return res.status(404).json({ error: "User not found" });
+      const code = generateRedemptionCode();
+      const redemption = await storage.createRedemption({
+        userId: DEMO_USER_ID,
+        rewardId: reward.id,
+        rewardName: reward.name,
+        rewardIcon: reward.icon,
+        rewardDescription: reward.description,
+        cost: reward.cost,
+        code,
+      });
       const { password: _password, ...safeUser } = updated;
-      res.json({ user: safeUser, reward });
+      res.json({ user: safeUser, reward, redemption });
     } catch (err) {
       handleZodError(err, res);
     }

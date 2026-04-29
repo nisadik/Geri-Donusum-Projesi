@@ -1,10 +1,11 @@
-import { randomUUID } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 import {
   type InsertRecyclingPoint,
   type InsertSavedLocation,
   type InsertUser,
   type RecyclingHistory,
   type RecyclingPoint,
+  type Redemption,
   type Reward,
   type SavedLocation,
   type User,
@@ -31,6 +32,15 @@ export interface IStorage {
 
   listRewards(): Promise<Reward[]>;
   getReward(id: string): Promise<Reward | undefined>;
+
+  listRedemptions(userId: string): Promise<Redemption[]>;
+  getRedemptionByCode(code: string): Promise<Redemption | undefined>;
+  createRedemption(
+    entry: Omit<Redemption, "id" | "redeemedAt" | "usedAt" | "code"> & {
+      code: string;
+    },
+  ): Promise<Redemption>;
+  markRedemptionUsed(code: string): Promise<Redemption | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -39,6 +49,7 @@ export class MemStorage implements IStorage {
   private locations = new Map<string, SavedLocation>();
   private history = new Map<string, RecyclingHistory>();
   private rewards = new Map<string, Reward>();
+  private redemptions = new Map<string, Redemption>();
 
   async getUser(id: string): Promise<User | undefined> {
     return this.users.get(id);
@@ -140,6 +151,48 @@ export class MemStorage implements IStorage {
     return this.rewards.get(id);
   }
 
+  async listRedemptions(userId: string): Promise<Redemption[]> {
+    return Array.from(this.redemptions.values())
+      .filter((entry) => entry.userId === userId)
+      .sort(
+        (a, b) =>
+          new Date(b.redeemedAt).getTime() - new Date(a.redeemedAt).getTime(),
+      );
+  }
+
+  async getRedemptionByCode(code: string): Promise<Redemption | undefined> {
+    return Array.from(this.redemptions.values()).find(
+      (entry) => entry.code === code,
+    );
+  }
+
+  async createRedemption(
+    entry: Omit<Redemption, "id" | "redeemedAt" | "usedAt" | "code"> & {
+      code: string;
+    },
+  ): Promise<Redemption> {
+    const id = randomUUID();
+    const created: Redemption = {
+      ...entry,
+      id,
+      redeemedAt: new Date(),
+      usedAt: null,
+    };
+    this.redemptions.set(id, created);
+    return created;
+  }
+
+  async markRedemptionUsed(code: string): Promise<Redemption | undefined> {
+    const entry = Array.from(this.redemptions.values()).find(
+      (e) => e.code === code,
+    );
+    if (!entry) return undefined;
+    if (entry.usedAt) return entry;
+    const updated: Redemption = { ...entry, usedAt: new Date() };
+    this.redemptions.set(entry.id, updated);
+    return updated;
+  }
+
   insertUserDirect(user: User) {
     this.users.set(user.id, user);
   }
@@ -155,6 +208,16 @@ export class MemStorage implements IStorage {
   insertRewardDirect(reward: Reward) {
     this.rewards.set(reward.id, reward);
   }
+}
+
+export function generateRedemptionCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(8);
+  let code = "";
+  for (let i = 0; i < 8; i++) {
+    code += chars[bytes[i] % chars.length];
+  }
+  return `AY-${code.slice(0, 4)}-${code.slice(4, 8)}`;
 }
 
 const memStorage = new MemStorage();

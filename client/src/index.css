@@ -9,6 +9,42 @@
   }
 }
 
+html,
+body,
+#root {
+  min-height: 100vh;
+  background: #0b1f1a;
+}
+
+@media (min-width: 641px) {
+  body {
+    background:
+      radial-gradient(circle at 20% 20%, #143d33 0%, #0b1f1a 60%);
+  }
+}
+
+.app-shell {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  margin: 0 auto;
+  background: #ffffff;
+  overflow-x: hidden;
+}
+
+@media (min-width: 641px) {
+  .app-shell {
+    max-width: 390px;
+    min-height: 780px;
+    margin: 24px auto;
+    border-radius: 36px;
+    box-shadow: 0 30px 60px -10px rgba(0, 0, 0, 0.55),
+      0 0 0 10px #1a1a1a, 0 0 0 12px #2c2c2c;
+    overflow: hidden;
+  }
+}
+
 :root {
   --m3-elevation-light-3: 0px 1px 3px 0px rgba(0, 0, 0, 0.3), 0px 4px 8px 3px rgba(0, 0, 0, 0.15);
 }

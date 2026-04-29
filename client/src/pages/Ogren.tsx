@@ -87,8 +87,8 @@ export const Ogren = (): JSX.Element => {
   const [openArticle, setOpenArticle] = useState<Article | null>(null);
 
   return (
-    <main className="w-full bg-white">
-      <div className="mx-auto flex w-full max-w-[390px] flex-col bg-white">
+    <main className="app-shell flex flex-col">
+      <div className="contents">
         <header className="relative">
           <div className="absolute inset-x-0 top-0 z-20 flex h-[54px] items-center justify-between px-6">
             <div className="[font-family:'SF_Pro-Semibold',Helvetica] text-[17px] font-normal leading-[22px] tracking-[0] text-black">

@@ -42,6 +42,7 @@ export const recyclingHistory = pgTable("recycling_history", {
   pointName: text("point_name").notNull(),
   pointType: text("point_type").notNull(),
   pointsEarned: integer("points_earned").notNull(),
+  proofImage: text("proof_image").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -52,6 +53,19 @@ export const rewards = pgTable("rewards", {
   cost: integer("cost").notNull(),
   icon: text("icon").notNull(),
   category: text("category").notNull(),
+});
+
+export const redemptions = pgTable("redemptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  rewardId: varchar("reward_id").notNull(),
+  rewardName: text("reward_name").notNull(),
+  rewardIcon: text("reward_icon").notNull(),
+  rewardDescription: text("reward_description").notNull(),
+  cost: integer("cost").notNull(),
+  code: text("code").notNull().unique(),
+  redeemedAt: timestamp("redeemed_at").notNull().defaultNow(),
+  usedAt: timestamp("used_at"),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -69,6 +83,10 @@ export const insertSavedLocationSchema = createInsertSchema(
 
 export const recycleActionSchema = z.object({
   recyclingPointId: z.string().min(1),
+  proofImage: z
+    .string()
+    .min(1, "Geri dönüşüm fotoğrafı zorunludur.")
+    .startsWith("data:image/", "Geçerli bir fotoğraf gerekli."),
 });
 
 export const redeemRewardSchema = z.object({
@@ -86,6 +104,7 @@ export type SavedLocation = typeof savedLocations.$inferSelect;
 
 export type RecyclingHistory = typeof recyclingHistory.$inferSelect;
 export type Reward = typeof rewards.$inferSelect;
+export type Redemption = typeof redemptions.$inferSelect;
 
 export type RecycleAction = z.infer<typeof recycleActionSchema>;
 export type RedeemReward = z.infer<typeof redeemRewardSchema>;
