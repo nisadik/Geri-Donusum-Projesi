@@ -6,13 +6,17 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
 import { Anasayfa } from "@/pages/Anasayfa";
+import { Ogren } from "@/pages/Ogren";
+import { Donustur } from "@/pages/Donustur";
+import { Profil } from "@/pages/Profil";
 
 function Router() {
   return (
     <Switch>
-      {/* Add pages below */}
       <Route path="/" component={Anasayfa} />
-      {/* Fallback to 404 */}
+      <Route path="/ogren" component={Ogren} />
+      <Route path="/donustur" component={Donustur} />
+      <Route path="/profil" component={Profil} />
       <Route component={NotFound} />
     </Switch>
   );
