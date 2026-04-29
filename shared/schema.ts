@@ -12,8 +12,9 @@ import { z } from "zod";
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
+  email: text("email").notNull().unique(),
   password: text("password").notNull(),
+  displayName: text("display_name").notNull(),
   points: integer("points").notNull().default(0),
 });
 
@@ -21,6 +22,7 @@ export const recyclingPoints = pgTable("recycling_points", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   type: text("type").notNull(),
+  city: text("city").notNull(),
   latitude: doublePrecision("latitude").notNull(),
   longitude: doublePrecision("longitude").notNull(),
   imageUrl: text("image_url").notNull(),
@@ -68,18 +70,32 @@ export const redemptions = pgTable("redemptions", {
   usedAt: timestamp("used_at"),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export const registerSchema = z.object({
+  email: z.string().email("Geçerli bir e-posta adresi gir."),
+  password: z.string().min(6, "Şifre en az 6 karakter olmalı."),
+  displayName: z
+    .string()
+    .min(2, "İsim en az 2 karakter olmalı.")
+    .max(40, "İsim en fazla 40 karakter olabilir."),
+});
+
+export const loginSchema = z.object({
+  email: z.string().email("Geçerli bir e-posta adresi gir."),
+  password: z.string().min(1, "Şifreni gir."),
 });
 
 export const insertRecyclingPointSchema = createInsertSchema(
   recyclingPoints,
 ).omit({ id: true });
 
-export const insertSavedLocationSchema = createInsertSchema(
-  savedLocations,
-).omit({ id: true });
+export const savedLocationInputSchema = z.object({
+  name: z
+    .string()
+    .min(1, "Konum adı gerekli.")
+    .max(30, "Konum adı en fazla 30 karakter olabilir."),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+});
 
 export const recycleActionSchema = z.object({
   recyclingPointId: z.string().min(1),
@@ -93,13 +109,16 @@ export const redeemRewardSchema = z.object({
   rewardId: z.string().min(1),
 });
 
-export type InsertUser = z.infer<typeof insertUserSchema>;
+export type RegisterInput = z.infer<typeof registerSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;
+
 export type User = typeof users.$inferSelect;
+export type PublicUser = Omit<User, "password">;
 
 export type InsertRecyclingPoint = z.infer<typeof insertRecyclingPointSchema>;
 export type RecyclingPoint = typeof recyclingPoints.$inferSelect;
 
-export type InsertSavedLocation = z.infer<typeof insertSavedLocationSchema>;
+export type SavedLocationInput = z.infer<typeof savedLocationInputSchema>;
 export type SavedLocation = typeof savedLocations.$inferSelect;
 
 export type RecyclingHistory = typeof recyclingHistory.$inferSelect;

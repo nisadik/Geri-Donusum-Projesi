@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { LogOut } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
@@ -8,7 +10,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { BottomNav } from "@/components/BottomNav";
-import type { RecyclingHistory, User } from "@shared/schema";
+import { useAuth, refreshAuth } from "@/hooks/use-auth";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import type { RecyclingHistory } from "@shared/schema";
 
 const typeColorClass: Record<string, string> = {
   Kağıt: "bg-black",
@@ -72,16 +77,32 @@ function formatRelativeTime(date: Date | string): string {
 }
 
 export const Profil = (): JSX.Element => {
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [proofPreview, setProofPreview] = useState<RecyclingHistory | null>(
     null,
   );
 
-  const userQuery = useQuery<Omit<User, "password">>({
-    queryKey: ["/api/me"],
-  });
-
   const historyQuery = useQuery<RecyclingHistory[]>({
     queryKey: ["/api/history"],
+  });
+
+  const logoutMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/auth/logout");
+    },
+    onSuccess: async () => {
+      queryClient.clear();
+      await refreshAuth();
+      toast({ title: "Çıkış yapıldı" });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Çıkış yapılamadı",
+        description: err.message.replace(/^\d+:\s*/, ""),
+        variant: "destructive",
+      });
+    },
   });
 
   const totalRecycles = historyQuery.data?.length ?? 0;
@@ -89,7 +110,7 @@ export const Profil = (): JSX.Element => {
     historyQuery.data?.reduce((sum, h) => sum + h.pointsEarned, 0) ?? 0;
   const uniqueTypes = new Set(historyQuery.data?.map((h) => h.pointType)).size;
 
-  const username = userQuery.data?.username ?? "Kullanıcı";
+  const username = user?.displayName ?? "Kullanıcı";
   const initial = username.charAt(0).toUpperCase();
 
   return (
@@ -107,6 +128,17 @@ export const Profil = (): JSX.Element => {
           </div>
           <Card className="w-full rounded-b-[16px] rounded-t-none border-0 bg-[#17594a] shadow-none">
             <CardContent className="relative flex min-h-[180px] flex-col items-center justify-end px-5 pb-6 pt-[60px]">
+              <button
+                type="button"
+                data-testid="button-logout"
+                onClick={() => logoutMutation.mutate()}
+                disabled={logoutMutation.isPending}
+                className="absolute right-4 top-[60px] flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-white/20 disabled:opacity-50"
+                aria-label="Çıkış Yap"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Çıkış
+              </button>
               <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#d3d04e] [font-family:'Nunito',Helvetica] text-3xl font-bold text-[#17594a]">
                 {initial}
               </div>
@@ -116,6 +148,12 @@ export const Profil = (): JSX.Element => {
               >
                 {username}
               </h1>
+              <p
+                data-testid="text-email"
+                className="[font-family:'Nunito',Helvetica] text-[11px] text-white/70"
+              >
+                {user?.email}
+              </p>
               <div className="mt-2 flex items-center gap-1 rounded-[13px] border border-solid border-white/40 px-2 py-1">
                 <img
                   className="h-5 w-5"
@@ -126,7 +164,7 @@ export const Profil = (): JSX.Element => {
                   data-testid="text-user-points"
                   className="[font-family:'Nunito',Helvetica] text-[13px] font-medium text-white"
                 >
-                  {userQuery.data?.points ?? 0} puan
+                  {user?.points ?? 0} puan
                 </span>
               </div>
             </CardContent>

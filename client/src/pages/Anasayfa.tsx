@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Camera, X } from "lucide-react";
+import { Camera, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -11,13 +11,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import { BottomNav } from "@/components/BottomNav";
 import type {
   RecyclingPoint,
   SavedLocation,
-  User,
 } from "@shared/schema";
 
 type LatLng = { lat: number; lng: number };
@@ -52,7 +53,21 @@ function haversineKm(a: LatLng, b: LatLng): number {
 
 function formatDistance(km: number): string {
   if (km < 1) return `${Math.round(km * 1000)} m`;
-  return `${km.toFixed(1).replace(".", ",")} km`;
+  if (km < 10) return `${km.toFixed(1).replace(".", ",")} km`;
+  return `${Math.round(km)} km`;
+}
+
+async function getCurrentPosition(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    if (!("geolocation" in navigator)) {
+      reject(new Error("Tarayıcın konum desteklemiyor."));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+    });
+  });
 }
 
 async function fileToResizedDataUrl(
@@ -86,6 +101,7 @@ async function fileToResizedDataUrl(
 
 export const Anasayfa = (): JSX.Element => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeLocation, setActiveLocation] = useState<ActiveLocation | null>(
     null,
@@ -94,11 +110,10 @@ export const Anasayfa = (): JSX.Element => {
   const [proofImage, setProofImage] = useState<string | null>(null);
   const [geoLoading, setGeoLoading] = useState(false);
   const [processingImage, setProcessingImage] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [newLocationName, setNewLocationName] = useState("");
+  const [newCoords, setNewCoords] = useState<LatLng | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const userQuery = useQuery<Omit<User, "password">>({
-    queryKey: ["/api/me"],
-  });
 
   const pointsQuery = useQuery<RecyclingPoint[]>({
     queryKey: ["/api/recycling-points"],
@@ -127,7 +142,6 @@ export const Anasayfa = (): JSX.Element => {
     }) => {
       const res = await apiRequest("POST", "/api/recycle", params);
       return (await res.json()) as {
-        user: Omit<User, "password">;
         earnedPoints: number;
         recyclingPoint: RecyclingPoint;
       };
@@ -144,6 +158,61 @@ export const Anasayfa = (): JSX.Element => {
     onError: (err: Error) => {
       toast({
         title: "Hata",
+        description: err.message.replace(/^\d+:\s*/, ""),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const addLocationMutation = useMutation({
+    mutationFn: async (input: {
+      name: string;
+      latitude: number;
+      longitude: number;
+    }) => {
+      const res = await apiRequest("POST", "/api/saved-locations", input);
+      return (await res.json()) as SavedLocation;
+    },
+    onSuccess: (loc) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/saved-locations"] });
+      setActiveLocation({
+        id: loc.id,
+        name: loc.name,
+        coords: { lat: loc.latitude, lng: loc.longitude },
+      });
+      setAddOpen(false);
+      setPickerOpen(false);
+      setNewLocationName("");
+      setNewCoords(null);
+      toast({
+        title: "Kısayol eklendi",
+        description: `${loc.name} kısayollara kaydedildi.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Eklenemedi",
+        description: err.message.replace(/^\d+:\s*/, ""),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteLocationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/saved-locations/${id}`);
+      return id;
+    },
+    onSuccess: (deletedId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/saved-locations"] });
+      if (activeLocation?.id === deletedId) {
+        setActiveLocation(null);
+      }
+      toast({ title: "Kısayol silindi" });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Silinemedi",
         description: err.message.replace(/^\d+:\s*/, ""),
         variant: "destructive",
       });
@@ -169,39 +238,25 @@ export const Anasayfa = (): JSX.Element => {
     setProofImage(null);
   };
 
-  const handleUseCurrentLocation = () => {
-    if (!("geolocation" in navigator)) {
+  const handleUseCurrentLocation = async () => {
+    setGeoLoading(true);
+    try {
+      const pos = await getCurrentPosition();
+      setActiveLocation({
+        id: "current",
+        name: "Mevcut Konum",
+        coords: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+      });
+      setPickerOpen(false);
+    } catch {
       toast({
-        title: "Konum desteklenmiyor",
-        description: "Tarayıcın konum servisini desteklemiyor.",
+        title: "Konum alınamadı",
+        description: "Konum izni verilmedi veya alınamadı.",
         variant: "destructive",
       });
-      return;
+    } finally {
+      setGeoLoading(false);
     }
-    setGeoLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setActiveLocation({
-          id: "current",
-          name: "Mevcut Konum",
-          coords: {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          },
-        });
-        setGeoLoading(false);
-        setPickerOpen(false);
-      },
-      () => {
-        toast({
-          title: "Konum alınamadı",
-          description: "Konum izni verilmedi veya alınamadı.",
-          variant: "destructive",
-        });
-        setGeoLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
   };
 
   const handlePickSavedLocation = (loc: SavedLocation) => {
@@ -216,6 +271,23 @@ export const Anasayfa = (): JSX.Element => {
   const handleOpenDirections = (point: RecyclingPoint) => {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${point.latitude},${point.longitude}`;
     window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleOpenAddLocation = async () => {
+    setGeoLoading(true);
+    try {
+      const pos = await getCurrentPosition();
+      setNewCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      setAddOpen(true);
+    } catch {
+      toast({
+        title: "Konum alınamadı",
+        description: "Kısayol eklemek için konum izni vermelisin.",
+        variant: "destructive",
+      });
+    } finally {
+      setGeoLoading(false);
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -256,7 +328,7 @@ export const Anasayfa = (): JSX.Element => {
               data-testid="text-app-title"
               className="[font-family:'Nunito',Helvetica] text-xl font-bold leading-[22px] tracking-[0] text-white"
             >
-              Atık Yeri
+              YeşilCepte
             </h1>
             <div className="absolute right-[25px] top-[84px] flex items-center gap-1 rounded-[13px] border border-solid border-[#d9d9d9] px-[5px] py-[5px]">
               <img
@@ -268,7 +340,7 @@ export const Anasayfa = (): JSX.Element => {
                 data-testid="text-user-points"
                 className="[font-family:'Nunito',Helvetica] text-[15px] font-medium leading-[22px] tracking-[0] text-[#d9d9d9]"
               >
-                {userQuery.data?.points ?? "—"}
+                {user?.points ?? 0}
               </span>
             </div>
             <div className="relative mb-[-36px] mt-[9px] h-[71px] w-[71px] overflow-hidden bg-[url(/figmaAssets/vector.svg)] bg-[100%_100%]">
@@ -323,38 +395,55 @@ export const Anasayfa = (): JSX.Element => {
 
               {pickerOpen && (
                 <Card className="w-full rounded-[27px] border border-solid border-[#999999] bg-[#f1f1f1] shadow-none">
-                  <CardContent className="flex flex-col items-start gap-[5px] p-[15px]">
-                    <div className="w-full">
-                      <button
-                        type="button"
-                        data-testid="button-use-current-location"
-                        disabled={geoLoading}
-                        onClick={handleUseCurrentLocation}
-                        className="block w-full text-left [font-family:'Nunito',Helvetica] text-base font-normal leading-[22px] tracking-[0] text-black disabled:opacity-50"
+                  <CardContent className="flex flex-col items-start gap-2 p-[15px]">
+                    <button
+                      type="button"
+                      data-testid="button-use-current-location"
+                      disabled={geoLoading}
+                      onClick={handleUseCurrentLocation}
+                      className="flex w-full items-center gap-2 rounded-[12px] bg-white px-3 py-2 text-left [font-family:'Nunito',Helvetica] text-[14px] font-semibold text-[#17594a] disabled:opacity-50"
+                    >
+                      <span aria-hidden="true">📍</span>
+                      {geoLoading ? "Konum alınıyor..." : "Mevcut Konumu Kullan"}
+                    </button>
+
+                    {savedLocationsQuery.data?.map((loc) => (
+                      <div
+                        key={loc.id}
+                        className="flex w-full items-center gap-2"
                       >
-                        {geoLoading
-                          ? "Konum alınıyor..."
-                          : "Mevcut Konumu Kullan"}
-                      </button>
-                      {(savedLocationsQuery.data?.length ?? 0) > 0 && (
-                        <div className="mt-[5px] h-px w-full bg-[#d9d9d9]" />
-                      )}
-                    </div>
-                    {savedLocationsQuery.data?.map((loc, index) => (
-                      <div key={loc.id} className="w-full">
                         <button
                           type="button"
                           data-testid={`button-location-${loc.name}`}
                           onClick={() => handlePickSavedLocation(loc)}
-                          className="block w-full text-left [font-family:'Nunito',Helvetica] text-base font-normal leading-[22px] tracking-[0] text-black"
+                          className="flex flex-1 items-center gap-2 rounded-[12px] px-3 py-2 text-left [font-family:'Nunito',Helvetica] text-[14px] text-black hover:bg-white"
                         >
+                          <span aria-hidden="true">⭐</span>
                           {loc.name}
                         </button>
-                        {index < (savedLocationsQuery.data?.length ?? 0) - 1 ? (
-                          <div className="mt-[5px] h-px w-full bg-[#d9d9d9]" />
-                        ) : null}
+                        <button
+                          type="button"
+                          data-testid={`button-delete-location-${loc.id}`}
+                          onClick={() => deleteLocationMutation.mutate(loc.id)}
+                          disabled={deleteLocationMutation.isPending}
+                          aria-label={`${loc.name} kısayolunu sil`}
+                          className="rounded-full p-1.5 text-[#7a7a7a] hover:bg-white hover:text-[#e23737]"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     ))}
+
+                    <button
+                      type="button"
+                      data-testid="button-add-location"
+                      disabled={geoLoading}
+                      onClick={handleOpenAddLocation}
+                      className="flex w-full items-center justify-center gap-2 rounded-[12px] border border-dashed border-[#17594a]/40 px-3 py-2 [font-family:'Nunito',Helvetica] text-[13px] font-semibold text-[#17594a] disabled:opacity-50"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Buradan Yeni Kısayol Ekle
+                    </button>
                   </CardContent>
                 </Card>
               )}
@@ -387,7 +476,7 @@ export const Anasayfa = (): JSX.Element => {
                   Yakında geri dönüşüm noktası bulunamadı.
                 </p>
               )}
-              {sortedPoints.map(({ point, km }) => {
+              {sortedPoints.slice(0, 8).map(({ point, km }) => {
                 const dotClass = typeColorClass[point.type] ?? "bg-black";
                 return (
                   <Card
@@ -412,21 +501,21 @@ export const Anasayfa = (): JSX.Element => {
                             src={point.imageUrl}
                           />
                           <div className="flex min-w-0 flex-col items-start justify-center">
-                            <h3 className="[font-family:'Nunito',Helvetica] text-[11px] font-medium leading-[22px] tracking-[0] text-black">
+                            <h3 className="[font-family:'Nunito',Helvetica] text-[11px] font-medium leading-[16px] tracking-[0] text-black">
                               {point.name}
                             </h3>
                             <p
                               data-testid={`text-distance-${point.id}`}
-                              className="[font-family:'Nunito',Helvetica] text-[10px] font-normal leading-[22px] tracking-[0] text-black"
+                              className="[font-family:'Nunito',Helvetica] text-[10px] font-normal leading-[16px] tracking-[0] text-black"
                             >
-                              {km == null ? "—" : formatDistance(km)}
+                              {km == null ? "—" : formatDistance(km)} • {point.city}
                             </p>
                             <div className="flex items-center gap-0.5">
                               <span
                                 className={`block h-1.5 w-1.5 rounded-[3px] ${dotClass}`}
                                 aria-hidden="true"
                               />
-                              <span className="[font-family:'Nunito',Helvetica] text-[10px] font-normal leading-[22px] tracking-[0] text-black">
+                              <span className="[font-family:'Nunito',Helvetica] text-[10px] font-normal leading-[16px] tracking-[0] text-black">
                                 {point.type}
                               </span>
                             </div>
@@ -450,7 +539,7 @@ export const Anasayfa = (): JSX.Element => {
                                 alt="Yol tarifi al"
                                 src="/figmaAssets/interface-cursor-arrow-2--mouse-select-cursor.svg"
                               />
-                              <span className="[font-family:'Nunito',Helvetica] text-center text-[8px] font-light leading-[22px] tracking-[0] text-black whitespace-nowrap">
+                              <span className="[font-family:'Nunito',Helvetica] text-center text-[8px] font-light leading-[14px] tracking-[0] text-black whitespace-nowrap">
                                 Yol Tarifi Al
                               </span>
                             </span>
@@ -560,6 +649,76 @@ export const Anasayfa = (): JSX.Element => {
               className="bg-[#17594a] text-white hover:bg-[#17594a]/90"
             >
               {recycleMutation.isPending ? "Kaydediliyor..." : "Puan Kazan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={addOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAddOpen(false);
+            setNewLocationName("");
+            setNewCoords(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-[340px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle data-testid="text-add-location-title">
+              Yeni Kısayol Ekle
+            </DialogTitle>
+            <DialogDescription>
+              Şu anki konumun kısayollara kaydedilecek. İstediğin bir isim ver.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <Input
+              data-testid="input-new-location-name"
+              placeholder="Örn. İş, Spor Salonu, Anneannem"
+              value={newLocationName}
+              onChange={(e) => setNewLocationName(e.target.value)}
+              maxLength={30}
+            />
+            {newCoords && (
+              <p className="rounded-xl bg-[#f1f1f1] p-2 text-center [font-family:'Nunito',Helvetica] text-[11px] text-[#4d4d4d]">
+                Konum: {newCoords.lat.toFixed(4)}, {newCoords.lng.toFixed(4)}
+              </p>
+            )}
+          </div>
+          <DialogFooter className="flex-row justify-end gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              data-testid="button-add-location-cancel"
+              onClick={() => {
+                setAddOpen(false);
+                setNewLocationName("");
+                setNewCoords(null);
+              }}
+            >
+              Vazgeç
+            </Button>
+            <Button
+              type="button"
+              data-testid="button-add-location-confirm"
+              disabled={
+                !newLocationName.trim() ||
+                !newCoords ||
+                addLocationMutation.isPending
+              }
+              onClick={() =>
+                newCoords &&
+                addLocationMutation.mutate({
+                  name: newLocationName.trim(),
+                  latitude: newCoords.lat,
+                  longitude: newCoords.lng,
+                })
+              }
+              className="bg-[#17594a] text-white hover:bg-[#17594a]/90"
+            >
+              {addLocationMutation.isPending ? "Ekleniyor..." : "Kaydet"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -81,7 +81,7 @@ export const Kullan = (): JSX.Element => {
               Kasiyer Doğrulama
             </h1>
             <p className="mt-1 [font-family:'Nunito',Helvetica] text-[12px] text-white/80">
-              Atık Yeri ödül kodu
+              YeşilCepte ödül kodu
             </p>
           </CardContent>
         </Card>

@@ -1,28 +1,32 @@
 import { randomBytes, randomUUID } from "crypto";
 import {
-  type InsertRecyclingPoint,
-  type InsertSavedLocation,
-  type InsertUser,
   type RecyclingHistory,
   type RecyclingPoint,
   type Redemption,
   type Reward,
   type SavedLocation,
+  type SavedLocationInput,
   type User,
 } from "@shared/schema";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createUser(user: {
+    email: string;
+    password: string;
+    displayName: string;
+  }): Promise<User>;
   addUserPoints(userId: string, delta: number): Promise<User | undefined>;
 
   listRecyclingPoints(): Promise<RecyclingPoint[]>;
   getRecyclingPoint(id: string): Promise<RecyclingPoint | undefined>;
-  createRecyclingPoint(point: InsertRecyclingPoint): Promise<RecyclingPoint>;
 
   listSavedLocations(userId: string): Promise<SavedLocation[]>;
-  createSavedLocation(location: InsertSavedLocation): Promise<SavedLocation>;
+  createSavedLocation(
+    userId: string,
+    location: SavedLocationInput,
+  ): Promise<SavedLocation>;
   deleteSavedLocation(id: string, userId: string): Promise<boolean>;
 
   listRecyclingHistory(userId: string): Promise<RecyclingHistory[]>;
@@ -55,17 +59,49 @@ export class MemStorage implements IStorage {
     return this.users.get(id);
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const normalized = email.trim().toLowerCase();
     return Array.from(this.users.values()).find(
-      (user) => user.username === username,
+      (user) => user.email === normalized,
     );
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
+  async createUser(input: {
+    email: string;
+    password: string;
+    displayName: string;
+  }): Promise<User> {
     const id = randomUUID();
-    const user: User = { ...insertUser, id, points: 0 };
+    const user: User = {
+      id,
+      email: input.email.trim().toLowerCase(),
+      password: input.password,
+      displayName: input.displayName.trim(),
+      points: 0,
+    };
     this.users.set(id, user);
+    this.seedDefaultLocations(id);
     return user;
+  }
+
+  private seedDefaultLocations(userId: string) {
+    const istanbul = { lat: 41.0082, lng: 28.9784 };
+    const ev: SavedLocation = {
+      id: randomUUID(),
+      userId,
+      name: "Ev",
+      latitude: istanbul.lat,
+      longitude: istanbul.lng,
+    };
+    const okul: SavedLocation = {
+      id: randomUUID(),
+      userId,
+      name: "Okul",
+      latitude: istanbul.lat + 0.015,
+      longitude: istanbul.lng + 0.01,
+    };
+    this.locations.set(ev.id, ev);
+    this.locations.set(okul.id, okul);
   }
 
   async addUserPoints(
@@ -87,19 +123,6 @@ export class MemStorage implements IStorage {
     return this.points.get(id);
   }
 
-  async createRecyclingPoint(
-    point: InsertRecyclingPoint,
-  ): Promise<RecyclingPoint> {
-    const id = randomUUID();
-    const created: RecyclingPoint = {
-      ...point,
-      id,
-      pointsValue: point.pointsValue ?? 10,
-    };
-    this.points.set(id, created);
-    return created;
-  }
-
   async listSavedLocations(userId: string): Promise<SavedLocation[]> {
     return Array.from(this.locations.values()).filter(
       (location) => location.userId === userId,
@@ -107,10 +130,17 @@ export class MemStorage implements IStorage {
   }
 
   async createSavedLocation(
-    location: InsertSavedLocation,
+    userId: string,
+    input: SavedLocationInput,
   ): Promise<SavedLocation> {
     const id = randomUUID();
-    const created: SavedLocation = { ...location, id };
+    const created: SavedLocation = {
+      id,
+      userId,
+      name: input.name.trim(),
+      latitude: input.latitude,
+      longitude: input.longitude,
+    };
     this.locations.set(id, created);
     return created;
   }
@@ -193,16 +223,8 @@ export class MemStorage implements IStorage {
     return updated;
   }
 
-  insertUserDirect(user: User) {
-    this.users.set(user.id, user);
-  }
-
   insertRecyclingPointDirect(point: RecyclingPoint) {
     this.points.set(point.id, point);
-  }
-
-  insertSavedLocationDirect(location: SavedLocation) {
-    this.locations.set(location.id, location);
   }
 
   insertRewardDirect(reward: Reward) {
@@ -217,98 +239,94 @@ export function generateRedemptionCode(): string {
   for (let i = 0; i < 8; i++) {
     code += chars[bytes[i] % chars.length];
   }
-  return `AY-${code.slice(0, 4)}-${code.slice(4, 8)}`;
+  return `YC-${code.slice(0, 4)}-${code.slice(4, 8)}`;
 }
 
 const memStorage = new MemStorage();
 
-export const DEMO_USER_ID = "demo-user";
+const IMG_PAPER = "/figmaAssets/rectangle-8.svg";
+const IMG_PLASTIC = "/figmaAssets/rectangle-8-2.svg";
+const IMG_METAL = "/figmaAssets/rectangle-8-1.svg";
 
-const ISTANBUL_CENTER = { lat: 41.0082, lng: 28.9784 };
+type SeedPoint = {
+  id: string;
+  name: string;
+  type: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+  pointsValue: number;
+};
 
-memStorage.insertUserDirect({
-  id: DEMO_USER_ID,
-  username: "Yeşil Kahraman",
-  password: "demo",
-  points: 300,
-});
-
-const seededPoints: RecyclingPoint[] = [
-  {
-    id: "rp-arden",
-    name: "ARDEN KAĞITÇILIK",
-    type: "Kağıt",
-    latitude: ISTANBUL_CENTER.lat + 0.005,
-    longitude: ISTANBUL_CENTER.lng + 0.003,
-    imageUrl: "/figmaAssets/rectangle-8.svg",
-    pointsValue: 15,
-  },
-  {
-    id: "rp-aras",
-    name: "ARAS GERİ DÖNÜŞÜM",
-    type: "Plastik",
-    latitude: ISTANBUL_CENTER.lat + 0.012,
-    longitude: ISTANBUL_CENTER.lng - 0.008,
-    imageUrl: "/figmaAssets/rectangle-8-2.svg",
-    pointsValue: 20,
-  },
-  {
-    id: "rp-yusuf",
-    name: "YUSUF METAL",
-    type: "Metal",
-    latitude: ISTANBUL_CENTER.lat - 0.011,
-    longitude: ISTANBUL_CENTER.lng + 0.009,
-    imageUrl: "/figmaAssets/rectangle-8-1.svg",
-    pointsValue: 25,
-  },
-  {
-    id: "rp-cam",
-    name: "EGE CAM GERİ DÖNÜŞÜM",
-    type: "Cam",
-    latitude: ISTANBUL_CENTER.lat - 0.018,
-    longitude: ISTANBUL_CENTER.lng - 0.014,
-    imageUrl: "/figmaAssets/rectangle-8-2.svg",
-    pointsValue: 18,
-  },
-  {
-    id: "rp-elektronik",
-    name: "TEKNO ELEKTRONİK",
-    type: "Elektronik",
-    latitude: ISTANBUL_CENTER.lat + 0.022,
-    longitude: ISTANBUL_CENTER.lng + 0.016,
-    imageUrl: "/figmaAssets/rectangle-8-1.svg",
-    pointsValue: 30,
-  },
-  {
-    id: "rp-pil",
-    name: "YEŞİL PİL TOPLAMA",
-    type: "Pil",
-    latitude: ISTANBUL_CENTER.lat + 0.007,
-    longitude: ISTANBUL_CENTER.lng - 0.02,
-    imageUrl: "/figmaAssets/rectangle-8.svg",
-    pointsValue: 22,
-  },
+const seededPoints: SeedPoint[] = [
+  // İstanbul
+  { id: "rp-ist-1", name: "ARDEN KAĞITÇILIK", type: "Kağıt", city: "İstanbul", latitude: 41.0132, longitude: 28.9814, pointsValue: 15 },
+  { id: "rp-ist-2", name: "ARAS GERİ DÖNÜŞÜM", type: "Plastik", city: "İstanbul", latitude: 41.0202, longitude: 28.9704, pointsValue: 20 },
+  { id: "rp-ist-3", name: "YUSUF METAL", type: "Metal", city: "İstanbul", latitude: 40.9972, longitude: 28.9874, pointsValue: 25 },
+  { id: "rp-ist-4", name: "EGE CAM GERİ DÖNÜŞÜM", type: "Cam", city: "İstanbul", latitude: 40.9902, longitude: 28.9644, pointsValue: 18 },
+  { id: "rp-ist-5", name: "TEKNO ELEKTRONİK", type: "Elektronik", city: "İstanbul", latitude: 41.0302, longitude: 28.9944, pointsValue: 30 },
+  { id: "rp-ist-6", name: "YEŞİL PİL TOPLAMA", type: "Pil", city: "İstanbul", latitude: 41.0152, longitude: 28.9584, pointsValue: 22 },
+  { id: "rp-ist-7", name: "KADIKÖY GERİ DÖNÜŞÜM", type: "Kağıt", city: "İstanbul", latitude: 40.9833, longitude: 29.0333, pointsValue: 15 },
+  { id: "rp-ist-8", name: "ÜSKÜDAR PLASTİK", type: "Plastik", city: "İstanbul", latitude: 41.0233, longitude: 29.0152, pointsValue: 18 },
+  { id: "rp-ist-9", name: "BEŞİKTAŞ METAL", type: "Metal", city: "İstanbul", latitude: 41.0422, longitude: 29.0083, pointsValue: 25 },
+  { id: "rp-ist-10", name: "ŞİŞLİ CAM TOPLAMA", type: "Cam", city: "İstanbul", latitude: 41.0603, longitude: 28.9871, pointsValue: 18 },
+  // Ankara
+  { id: "rp-ank-1", name: "ÇANKAYA GERİ DÖNÜŞÜM", type: "Kağıt", city: "Ankara", latitude: 39.9208, longitude: 32.8541, pointsValue: 15 },
+  { id: "rp-ank-2", name: "KIZILAY PLASTİK MERKEZİ", type: "Plastik", city: "Ankara", latitude: 39.9201, longitude: 32.8540, pointsValue: 20 },
+  { id: "rp-ank-3", name: "ULUS METAL TOPLAMA", type: "Metal", city: "Ankara", latitude: 39.9407, longitude: 32.8538, pointsValue: 25 },
+  { id: "rp-ank-4", name: "BATIKENT CAM GERİ DÖNÜŞÜM", type: "Cam", city: "Ankara", latitude: 39.9701, longitude: 32.7378, pointsValue: 18 },
+  { id: "rp-ank-5", name: "KEÇİÖREN ELEKTRONİK", type: "Elektronik", city: "Ankara", latitude: 39.9851, longitude: 32.8657, pointsValue: 30 },
+  // İzmir
+  { id: "rp-izm-1", name: "KONAK GERİ DÖNÜŞÜM", type: "Kağıt", city: "İzmir", latitude: 38.4192, longitude: 27.1287, pointsValue: 15 },
+  { id: "rp-izm-2", name: "ALSANCAK PLASTİK", type: "Plastik", city: "İzmir", latitude: 38.4378, longitude: 27.1438, pointsValue: 20 },
+  { id: "rp-izm-3", name: "BORNOVA METAL", type: "Metal", city: "İzmir", latitude: 38.4678, longitude: 27.2167, pointsValue: 25 },
+  { id: "rp-izm-4", name: "KARŞIYAKA CAM", type: "Cam", city: "İzmir", latitude: 38.4615, longitude: 27.1107, pointsValue: 18 },
+  { id: "rp-izm-5", name: "BUCA PİL TOPLAMA", type: "Pil", city: "İzmir", latitude: 38.3805, longitude: 27.1736, pointsValue: 22 },
+  // Bursa
+  { id: "rp-bur-1", name: "OSMANGAZİ GERİ DÖNÜŞÜM", type: "Kağıt", city: "Bursa", latitude: 40.1956, longitude: 29.0610, pointsValue: 15 },
+  { id: "rp-bur-2", name: "NİLÜFER PLASTİK", type: "Plastik", city: "Bursa", latitude: 40.2167, longitude: 28.9833, pointsValue: 20 },
+  { id: "rp-bur-3", name: "YILDIRIM METAL", type: "Metal", city: "Bursa", latitude: 40.2117, longitude: 29.1003, pointsValue: 25 },
+  // Antalya
+  { id: "rp-ant-1", name: "MURATPAŞA GERİ DÖNÜŞÜM", type: "Kağıt", city: "Antalya", latitude: 36.8841, longitude: 30.7056, pointsValue: 15 },
+  { id: "rp-ant-2", name: "KONYAALTI PLASTİK", type: "Plastik", city: "Antalya", latitude: 36.8575, longitude: 30.6322, pointsValue: 20 },
+  { id: "rp-ant-3", name: "LARA CAM TOPLAMA", type: "Cam", city: "Antalya", latitude: 36.8500, longitude: 30.7833, pointsValue: 18 },
+  // Adana
+  { id: "rp-ada-1", name: "SEYHAN GERİ DÖNÜŞÜM", type: "Kağıt", city: "Adana", latitude: 37.0017, longitude: 35.3289, pointsValue: 15 },
+  { id: "rp-ada-2", name: "YÜREĞİR METAL", type: "Metal", city: "Adana", latitude: 36.9789, longitude: 35.3742, pointsValue: 25 },
+  // Konya
+  { id: "rp-kon-1", name: "SELÇUKLU GERİ DÖNÜŞÜM", type: "Kağıt", city: "Konya", latitude: 37.8714, longitude: 32.4843, pointsValue: 15 },
+  { id: "rp-kon-2", name: "MERAM PLASTİK", type: "Plastik", city: "Konya", latitude: 37.8581, longitude: 32.4587, pointsValue: 20 },
+  // Diğer şehirler
+  { id: "rp-esk-1", name: "ESKİŞEHİR GERİ DÖNÜŞÜM", type: "Kağıt", city: "Eskişehir", latitude: 39.7767, longitude: 30.5206, pointsValue: 15 },
+  { id: "rp-gaz-1", name: "GAZİANTEP PLASTİK", type: "Plastik", city: "Gaziantep", latitude: 37.0662, longitude: 37.3833, pointsValue: 20 },
+  { id: "rp-kay-1", name: "KAYSERİ METAL", type: "Metal", city: "Kayseri", latitude: 38.7312, longitude: 35.4787, pointsValue: 25 },
+  { id: "rp-tra-1", name: "TRABZON CAM", type: "Cam", city: "Trabzon", latitude: 41.0015, longitude: 39.7178, pointsValue: 18 },
+  { id: "rp-mer-1", name: "MERSİN PİL TOPLAMA", type: "Pil", city: "Mersin", latitude: 36.8121, longitude: 34.6415, pointsValue: 22 },
+  { id: "rp-sam-1", name: "SAMSUN ELEKTRONİK", type: "Elektronik", city: "Samsun", latitude: 41.2867, longitude: 36.3300, pointsValue: 30 },
+  { id: "rp-dyb-1", name: "DİYARBAKIR GERİ DÖNÜŞÜM", type: "Kağıt", city: "Diyarbakır", latitude: 37.9144, longitude: 40.2306, pointsValue: 15 },
 ];
 
+const typeImage: Record<string, string> = {
+  Kağıt: IMG_PAPER,
+  Plastik: IMG_PLASTIC,
+  Metal: IMG_METAL,
+  Cam: IMG_PLASTIC,
+  Elektronik: IMG_METAL,
+  Pil: IMG_PAPER,
+};
+
 for (const point of seededPoints) {
-  memStorage.insertRecyclingPointDirect(point);
+  memStorage.insertRecyclingPointDirect({
+    id: point.id,
+    name: point.name,
+    type: point.type,
+    city: point.city,
+    latitude: point.latitude,
+    longitude: point.longitude,
+    imageUrl: typeImage[point.type] ?? IMG_PAPER,
+    pointsValue: point.pointsValue,
+  });
 }
-
-memStorage.insertSavedLocationDirect({
-  id: "loc-ev",
-  userId: DEMO_USER_ID,
-  name: "Ev",
-  latitude: ISTANBUL_CENTER.lat,
-  longitude: ISTANBUL_CENTER.lng,
-});
-
-memStorage.insertSavedLocationDirect({
-  id: "loc-okul",
-  userId: DEMO_USER_ID,
-  name: "Okul",
-  latitude: ISTANBUL_CENTER.lat + 0.015,
-  longitude: ISTANBUL_CENTER.lng + 0.01,
-});
 
 const seededRewards: Reward[] = [
   {
@@ -338,7 +356,7 @@ const seededRewards: Reward[] = [
   {
     id: "rw-tshirt",
     name: "Geri Dönüştürülmüş Tişört",
-    description: "Geri dönüştürülmüş malzemeden üretilmiş Atık Yeri tişörtü.",
+    description: "Geri dönüştürülmüş malzemeden üretilmiş YeşilCepte tişörtü.",
     cost: 800,
     icon: "👕",
     category: "Ürün",
